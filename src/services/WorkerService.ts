@@ -1,6 +1,5 @@
 import express from 'express';
-import { SessionStore } from '../storage/SessionStore.js';
-import { ObservationStore } from '../storage/ObservationStore.js';
+import { MemoryService } from './MemoryService.js';
 import { Session, Observation } from '../types/index.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -10,8 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export class WorkerService {
   private app = express();
   private port = 37888;
-  private sessionStore = new SessionStore();
-  private observationStore = new ObservationStore();
+  private memoryService = MemoryService.getInstance();
 
   constructor() {
     this.app.use(express.json());
@@ -20,10 +18,10 @@ export class WorkerService {
 
   private setupRoutes() {
     // Session endpoints
-    this.app.post('/api/sessions', (req, res) => {
+    this.app.post('/api/sessions', async (req, res) => {
       try {
         const session: Session = req.body;
-        this.sessionStore.createSession(session);
+        await this.memoryService.createSession(session);
         res.status(201).json({ success: true });
       } catch (error) {
         res.status(500).json({ error: String(error) });
@@ -31,10 +29,10 @@ export class WorkerService {
     });
 
     // Observation endpoints
-    this.app.post('/api/observations', (req, res) => {
+    this.app.post('/api/observations', async (req, res) => {
       try {
         const observation: Observation = req.body;
-        const id = this.observationStore.saveObservation(observation);
+        const id = await this.memoryService.saveObservation(observation);
         res.status(201).json({ success: true, id });
       } catch (error) {
         res.status(500).json({ error: String(error) });
@@ -42,11 +40,11 @@ export class WorkerService {
     });
 
     // Search endpoint
-    this.app.get('/api/search', (req, res) => {
+    this.app.get('/api/search', async (req, res) => {
       try {
         const { query, project } = req.query;
         
-        const results = this.observationStore.searchObservations(
+        const results = await this.memoryService.searchObservations(
           (query as string) || '',
           (project as string) || undefined
         );
@@ -58,9 +56,9 @@ export class WorkerService {
     });
 
     // Projects endpoint
-    this.app.get('/api/projects', (req, res) => {
+    this.app.get('/api/projects', async (req, res) => {
       try {
-        const projects = this.sessionStore.getAllProjects();
+        const projects = await this.memoryService.getAllProjects();
         res.json(projects);
       } catch (error) {
         res.status(500).json({ error: String(error) });

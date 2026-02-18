@@ -1,13 +1,9 @@
 import fs from 'fs';
 import path from 'path';
-import { ObservationStore } from '../storage/ObservationStore.js';
-import { SessionStore } from '../storage/SessionStore.js';
-import { HandoffStore } from '../storage/HandoffStore.js';
+import { MemoryService } from '../services/MemoryService.js';
 import { Observation, Session } from '../types/index.js';
 
-const observationStore = new ObservationStore();
-const sessionStore = new SessionStore();
-const handoffStore = new HandoffStore();
+const memoryService = MemoryService.getInstance();
 
 async function handleGeminiHook() {
   const hookType = process.argv[2]; // 'session-start', 'before-agent', 'after-tool'
@@ -18,7 +14,8 @@ async function handleGeminiHook() {
 
   if (hookType === 'session-start') {
     // 1. Create session if not exists
-    if (!sessionStore.getSession(session_id)) {
+    const existingSession = await memoryService.getSession(session_id);
+    if (!existingSession) {
       const session: Session = {
         session_id,
         project,
@@ -27,12 +24,13 @@ async function handleGeminiHook() {
         created_at: new Date().toISOString(),
         created_at_epoch: Math.floor(Date.now() / 1000)
       };
-      sessionStore.createSession(session);
+      await memoryService.createSession(session);
     }
 
     // 2. Inject context into GEMINI.md
-    const pendingHandoff = handoffStore.getPendingHandoff(project);
-    const recentObs = observationStore.getObservationsByProject(project).slice(0, 10);
+    const pendingHandoff = await memoryService.getPendingHandoff(project);
+    const observations = await memoryService.getObservationsByProject(project);
+    const recentObs = observations.slice(0, 10);
     
     let context = `<!-- UNIMEM:START -->
 # UniMem Context
@@ -95,7 +93,7 @@ async function handleGeminiHook() {
       created_at_epoch: Math.floor(Date.now() / 1000)
     };
     
-    observationStore.saveObservation(obs);
+    await memoryService.saveObservation(obs);
   }
 }
 

@@ -2,16 +2,12 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { SessionStore } from "./storage/SessionStore.js";
-import { ObservationStore } from "./storage/ObservationStore.js";
-import { HandoffStore } from "./storage/HandoffStore.js";
+import { MemoryService } from "./services/MemoryService.js";
 import { Observation, Session, Handoff } from "./types/index.js";
 import { WorkerService } from "./services/WorkerService.js";
 
-// Initialize Stores
-const sessionStore = new SessionStore();
-const observationStore = new ObservationStore();
-const handoffStore = new HandoffStore();
+// Initialize Memory Service (Universal Brain)
+const memoryService = MemoryService.getInstance();
 
 // Initialize MCP Server
 const server = new Server(
@@ -101,7 +97,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     if (name === SEARCH_TOOL) {
       const { query, project } = args as any;
-      const results = observationStore.searchObservations(query);
+      const results = await memoryService.searchObservations(query, project);
       return { 
         content: [{ 
           type: "text", 
@@ -125,13 +121,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         created_at: new Date().toISOString(),
         created_at_epoch: Math.floor(Date.now() / 1000),
       };
-      const id = observationStore.saveObservation(obs);
+      const id = await memoryService.saveObservation(obs);
       return { content: [{ type: "text", text: `Saved observation with ID: ${id}` }] };
     }
     if (name === RESUME_TOOL) {
       const { project } = args as any;
-      const pendingHandoff = handoffStore.getPendingHandoff(project);
-      const recentObservations = observationStore.getObservationsByProject(project).slice(0, 5);
+      const pendingHandoff = await memoryService.getPendingHandoff(project);
+      const observations = await memoryService.getObservationsByProject(project);
+      const recentObservations = observations.slice(0, 5);
       
       const resumeData = {
         handoff: pendingHandoff || null,
@@ -156,7 +153,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         reason,
         created_at_epoch: Math.floor(Date.now() / 1000),
       };
-      const id = handoffStore.createHandoff(handoff);
+      const id = await memoryService.createHandoff(handoff);
       return { content: [{ type: "text", text: `Created handoff snapshot with ID: ${id}. You can now switch to another CLI.` }] };
     }
     throw new Error(`Tool not found: ${name}`);
@@ -174,7 +171,7 @@ async function runServer() {
   const worker = new WorkerService();
   worker.start();
   
-  console.error("UniMem MCP Server and Worker running");
+  console.error("UniMem MCP Server and Worker running (Provider: " + (process.env.MEMORY_PROVIDER || 'sqlite') + ")");
 }
 
 runServer().catch((error) => {
