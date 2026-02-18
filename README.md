@@ -2,7 +2,7 @@
 
 ### The Universal AI CLI Memory Service
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/yourusername/unimem)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/akankshagupta/unimem)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Protocol](https://img.shields.io/badge/MCP-Supported-orange.svg)](https://modelcontextprotocol.io)
 
@@ -40,7 +40,7 @@
 
 ### 2. Core Setup
 ```bash
-git clone https://github.com/yourusername/unimem.git
+git clone https://github.com/akankshagupta/unimem.git
 cd unimem
 
 # Install backend dependencies
@@ -67,7 +67,7 @@ npm run unimem -- install --all
 
 UniMem is built on the **Model Context Protocol (MCP)**, meaning any CLI that supports MCP can use it as a persistent brain.
 
-### Gemini CLI (`entire`)
+### Gemini CLI 
 UniMem installs itself into `~/.gemini/settings.json` using high-performance lifecycle hooks:
 ```json
 "hooks": {
@@ -103,9 +103,13 @@ Point any MCP-capable tool to `src/index.ts`. Use these tools to interact with m
 
 ---
 
+## 🤝 Contributing
+
+We welcome contributions! UniMem is an open-source project and thrives on community input. Please see our [Contributing Guide](CONTRIBUTING.md) to get started with bug reports, feature requests, or code submissions.
+
 ## 📄 License
 
-MIT © Akanksha Gupta
+UniMem is open-source software licensed under the [MIT License](LICENSE).
 
 ---
 *Developed with ❤️ for the AI Developer Community.*
