@@ -14,11 +14,11 @@
 
 ### The Intelligence Feed
 *A high-fidelity, dark-themed timeline of every AI action taken across your project.*
-![Timeline Screenshot](https://raw.githubusercontent.com/yourusername/unimem/main/docs/screenshots/timeline.png)
+![Timeline Screenshot](./docs/screenshots/timeline.png)
 
 ### Multi-CLI Synchronization
 *Real-time project switching and cross-tool activity tracking.*
-![Projects Screenshot](https://raw.githubusercontent.com/yourusername/unimem/main/docs/screenshots/dashboard.png)
+![Projects Screenshot](./docs/screenshots/dashboard.png)
 
 ---
 
