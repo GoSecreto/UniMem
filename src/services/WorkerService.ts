@@ -43,13 +43,28 @@ export class WorkerService {
 
     // Search endpoint
     this.app.get('/api/search', (req, res) => {
-      const { query, project } = req.query;
-      
-      const results = this.observationStore.searchObservations(
-        (query as string) || '',
-        (project as string) || undefined
-      );
-      res.json(results);
+      try {
+        const { query, project } = req.query;
+        
+        const results = this.observationStore.searchObservations(
+          (query as string) || '',
+          (project as string) || undefined
+        );
+        res.json(results);
+      } catch (error) {
+        console.error('SEARCH API ERROR:', error);
+        res.status(500).json({ error: String(error) });
+      }
+    });
+
+    // Projects endpoint
+    this.app.get('/api/projects', (req, res) => {
+      try {
+        const projects = this.sessionStore.getAllProjects();
+        res.json(projects);
+      } catch (error) {
+        res.status(500).json({ error: String(error) });
+      }
     });
 
     // UI - Serve static files (to be built)
@@ -65,7 +80,7 @@ export class WorkerService {
 
   public start() {
     this.app.listen(this.port, () => {
-      console.log(`UniMem Worker Service running at http://localhost:${this.port}`);
+      console.error(`UniMem Worker Service running at http://localhost:${this.port}`);
     });
   }
 }

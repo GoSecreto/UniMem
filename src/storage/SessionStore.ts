@@ -38,6 +38,12 @@ export class SessionStore {
     return stmt.all(project) as Session[];
   }
 
+  public getAllProjects(): string[] {
+    const stmt = this.db.prepare('SELECT DISTINCT project FROM sessions UNION SELECT DISTINCT project FROM observations');
+    const rows = stmt.all() as { project: string }[];
+    return rows.map(r => r.project);
+  }
+
   public updateSessionStatus(sessionId: string, status: Session['status'], reason?: string): void {
     const stmt = this.db.prepare(`
       UPDATE sessions 
