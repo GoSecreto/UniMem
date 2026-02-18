@@ -6,80 +6,106 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Protocol](https://img.shields.io/badge/MCP-Supported-orange.svg)](https://modelcontextprotocol.io)
 
-**UniMem** is a persistent, cross-CLI memory engine for AI-assisted development. It breaks down the silos between different AI coding tools (Claude Code, Gemini CLI, Cursor, etc.), allowing your project context, decisions, and progress to follow you seamlessly from one tool to another.
+**UniMem** is a persistent, cross-CLI memory engine for AI-assisted development. It breaks down the silos between AI coding tools (Claude Code, Gemini CLI, Cursor, etc.), allowing your project context, decisions, and progress to follow you seamlessly.
+
+---
+
+## 🖼️ Dashboard Gallery
+
+### The Intelligence Feed
+*A high-fidelity, dark-themed timeline of every AI action taken across your project.*
+![Timeline Screenshot](https://raw.githubusercontent.com/yourusername/unimem/main/docs/screenshots/timeline.png)
+
+### Multi-CLI Synchronization
+*Real-time project switching and cross-tool activity tracking.*
+![Projects Screenshot](https://raw.githubusercontent.com/yourusername/unimem/main/docs/screenshots/dashboard.png)
 
 ---
 
 ## 🌟 Key Features
 
-- **🔄 Cross-CLI Continuity**: Start a task in Claude Code and resume it in Gemini CLI without re-explaining context.
-- **🛡️ Handoff Protocol**: Explicitly save a state snapshot when switching CLIs (e.g., when rate-limited).
-- **🚀 MCP-Native**: Built on the Model Context Protocol for deep integration with modern AI agents.
-- **📊 Interactive Timeline**: A professional React dashboard to visualize your development history.
-- **🧪 Hook-Based Capture**: Automatic, zero-config memory capture for Gemini CLI and Claude Code.
-- **⚡ High Performance**: Powered by SQLite (WAL mode) and FTS5 for lightning-fast search.
+- **🔄 Cross-CLI Continuity**: Start a task in Gemini and resume in Claude without re-explaining context.
+- **🛡️ Handoff Protocol**: Explicitly save a state snapshot when switching CLIs.
+- **🚀 MCP-Native**: Native integration with the Model Context Protocol.
+- **📊 Pro Dashboard**: React-based timeline at `localhost:37888`.
+- **⚡ High Performance**: Powered by SQLite (WAL mode) and FTS5 search.
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Installation & Setup
 
-### 1. Installation
+### 1. Requirements
+- Node.js v20+
+- `better-sqlite3` build essentials
 
+### 2. Core Setup
 ```bash
-# Clone the repository
 git clone https://github.com/yourusername/unimem.git
 cd unimem
 
-# Install backend & UI dependencies
+# Install backend dependencies
 npm install
-cd ui && npm install && npm run build
+
+# Build the professional Dashboard
+cd ui
+npm install
+npm run build
 cd ..
 ```
 
-### 2. Connect Your CLIs
-
-Install UniMem as an MCP server and lifecycle hook provider for your favorite tools:
+### 3. Automated CLI Integration
+UniMem can automatically "wire" itself into your local AI tools:
 
 ```bash
+# Install hooks into both Gemini CLI and Claude Code
 npm run unimem -- install --all
 ```
-*Supports: Gemini CLI (`entire`), Claude Code.*
 
-### 3. Start the Engine
+---
 
-```bash
-npm start
+## 🔌 Connecting Any CLI
+
+UniMem is built on the **Model Context Protocol (MCP)**, meaning any CLI that supports MCP can use it as a persistent brain.
+
+### Gemini CLI (`entire`)
+UniMem installs itself into `~/.gemini/settings.json` using high-performance lifecycle hooks:
+```json
+"hooks": {
+  "SessionStart": [{ "matcher": "*", "hooks": [{ "name": "unimem-start", "type": "command", "command": "/path/to/node /path/to/unimem/node_modules/.bin/tsx /path/to/unimem/src/hooks/gemini-hook.ts session-start" }] }]
+}
 ```
-The UniMem server will start on **port 37888** and the Dashboard will be accessible at `http://localhost:37888`.
+
+### Claude Code
+UniMem registers as a global MCP server in `~/.mcp.json`:
+```json
+"mcpServers": {
+  "unimem": {
+    "command": "/path/to/node",
+    "args": ["/path/to/tsx", "/path/to/unimem/src/index.ts"]
+  }
+}
+```
+
+### Other CLIs (Manual)
+Point any MCP-capable tool to `src/index.ts`. Use these tools to interact with memory:
+- `memory_search`: Query your historical project knowledge.
+- `memory_handoff`: Save your current progress before switching tools.
+- `memory_resume`: Get a "cheat sheet" of where you left off.
 
 ---
 
-## 📖 How It Works
+## 📖 The "Handoff" Workflow
 
-UniMem acts as a centralized brain for your local development environment.
-
-1.  **Observation Extraction**: Lifecycle hooks capture tool outputs (edits, commands, research) and store them as structured "Observations" in a central SQLite database.
-2.  **Context Injection**: On session start, UniMem detects the project and injects the latest memory context into native files like `GEMINI.md` or `CLAUDE.md`.
-3.  **Handoffs**: When switching CLIs, a `memory_handoff` tool creates a task snapshot. The next CLI calls `memory_resume` to pick up exactly where you left off.
-
----
-
-## 🛠 Tech Stack
-
-- **Backend**: Node.js, TypeScript, Better-SQLite3, Express
-- **Frontend**: React, Vite, Tailwind CSS, Lucide Icons
-- **Protocol**: Model Context Protocol (MCP)
-- **Search**: SQLite FTS5 Full-Text Search
+1.  **Work in Gemini**: Research a complex bug. Gemini saves observations to UniMem automatically.
+2.  **Rate Limit / Switch**: You hit a rate limit. Tell Gemini: *"Use `memory_handoff` to save my progress."*
+3.  **Resume in Claude**: Open Claude Code. Claude automatically reads `CLAUDE.md` (updated by UniMem) or calls `memory_resume`.
+4.  **Result**: Claude says: *"I see you were researching the auth bug in Gemini. I'll continue fixing the JWT expiry now."*
 
 ---
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for more details.
 
 ## 📄 License
 
-UniMem is open-source software licensed under the [MIT License](LICENSE).
+MIT © Akanksha Gupta
 
 ---
 *Developed with ❤️ for the AI Developer Community.*
