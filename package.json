@@ -1,30 +1,47 @@
 {
   "name": "unimem",
   "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "start": "npx tsx src/index.ts",
-    "unimem": "npx tsx src/unimem.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "description": "Universal AI CLI Memory Service - persistent memory across Claude Code, Gemini CLI, Codex, Copilot, Cursor, and Aider",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "unimem": "./dist/cli/index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "start:dev": "tsx src/index.ts",
+    "cli": "tsx src/cli/index.ts",
+    "worker": "tsx src/server/http-server.ts",
+    "test": "tsx --test src/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "mcp",
+    "memory",
+    "ai",
+    "cli",
+    "claude",
+    "gemini",
+    "codex",
+    "copilot"
+  ],
+  "author": "Akanksha Gupta",
+  "license": "MIT",
   "devDependencies": {
-    "@types/commander": "^2.12.0",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
-    "@types/node": "^25.2.3",
+    "@types/node": "^22.0.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.7.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "better-sqlite3": "^12.6.2",
-    "chromadb": "^3.3.0",
-    "commander": "^14.0.3",
-    "dotenv": "^17.3.1",
-    "express": "^5.2.1",
-    "zod": "^4.3.6"
+    "better-sqlite3": "^11.7.0",
+    "commander": "^12.1.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "zod": "^3.23.0"
   }
 }

@@ -1,22 +1,13 @@
 import { IMemoryProvider } from '../interfaces/IMemoryProvider.js';
 import { SQLiteProvider } from '../providers/SQLiteProvider.js';
-import { Session, Observation, Handoff } from '../types/index.js';
+import { Session, Observation, SessionSummary, Handoff, UserPrompt } from '../types/index.js';
 
 export class MemoryService {
   private static instance: MemoryService;
   private provider: IMemoryProvider;
 
   private constructor() {
-    // Determine provider from environment or default to SQLite
-    const providerType = process.env.MEMORY_PROVIDER || 'sqlite';
-    
-    if (providerType === 'sqlite') {
-      this.provider = new SQLiteProvider();
-    } else {
-      // Fallback or other providers like Cognee can be added here
-      this.provider = new SQLiteProvider();
-      console.error(`Unknown provider type: ${providerType}, defaulting to sqlite`);
-    }
+    this.provider = new SQLiteProvider();
   }
 
   public static getInstance(): MemoryService {
@@ -26,22 +17,48 @@ export class MemoryService {
     return MemoryService.instance;
   }
 
-  // Delegate all calls to the active provider
-  async createSession(session: Session) { return this.provider.createSession(session); }
-  async getSession(sessionId: string) { return this.provider.getSession(sessionId); }
-  async getProjectSessions(project: string) { return this.provider.getProjectSessions(project); }
-  async updateSessionStatus(sessionId: string, status: Session['status'], reason?: string) { 
-    return this.provider.updateSessionStatus(sessionId, status, reason); 
+  // Session
+  createSession(session: Session) { return this.provider.createSession(session); }
+  getSession(sessionId: string) { return this.provider.getSession(sessionId); }
+  getProjectSessions(project: string) { return this.provider.getProjectSessions(project); }
+  getRecentSessions(project: string, limit?: number) { return this.provider.getRecentSessions(project, limit); }
+  getLastActiveSession(project: string) { return this.provider.getLastActiveSession(project); }
+  updateSessionStatus(sessionId: string, status: Session['status'], reason?: string) {
+    return this.provider.updateSessionStatus(sessionId, status, reason);
   }
-  async getAllProjects() { return this.provider.getAllProjects(); }
+  getAllProjects() { return this.provider.getAllProjects(); }
 
-  async saveObservation(obs: Observation) { return this.provider.saveObservation(obs); }
-  async getObservationsByProject(project: string) { return this.provider.getObservationsByProject(project); }
-  async searchObservations(query: string, project?: string) { return this.provider.searchObservations(query, project); }
+  // Observations
+  saveObservation(obs: Observation) { return this.provider.saveObservation(obs); }
+  getObservationsByProject(project: string, limit?: number) { return this.provider.getObservationsByProject(project, limit); }
+  getObservationsBySession(sessionId: string) { return this.provider.getObservationsBySession(sessionId); }
+  searchObservations(query: string, project?: string, cliTool?: string, limit?: number) {
+    return this.provider.searchObservations(query, project, cliTool, limit);
+  }
+  getObservationCount(project?: string) { return this.provider.getObservationCount(project); }
+  getTimeline(project: string, anchorId?: number, before?: number, after?: number) {
+    return this.provider.getTimeline(project, anchorId, before, after);
+  }
 
-  async createHandoff(handoff: Handoff) { return this.provider.createHandoff(handoff); }
-  async getPendingHandoff(project: string) { return this.provider.getPendingHandoff(project); }
-  async markHandoffPickedUp(id: number, toSessionId: string, toCli: string) { 
-    return this.provider.markHandoffPickedUp(id, toSessionId, toCli); 
+  // Summaries
+  saveSummary(summary: SessionSummary) { return this.provider.saveSummary(summary); }
+  getSummary(sessionId: string) { return this.provider.getSummary(sessionId); }
+  getRecentSummaries(project: string, limit?: number) { return this.provider.getRecentSummaries(project, limit); }
+
+  // Prompts
+  saveUserPrompt(prompt: UserPrompt) { return this.provider.saveUserPrompt(prompt); }
+  getSessionPrompts(sessionId: string) { return this.provider.getSessionPrompts(sessionId); }
+
+  // Handoffs
+  createHandoff(handoff: Handoff) { return this.provider.createHandoff(handoff); }
+  getPendingHandoff(project: string) { return this.provider.getPendingHandoff(project); }
+  markHandoffPickedUp(id: number, toSessionId: string, toCli: string) {
+    return this.provider.markHandoffPickedUp(id, toSessionId, toCli);
+  }
+  getHandoffHistory(project: string, limit?: number) { return this.provider.getHandoffHistory(project, limit); }
+
+  // Auto-Detection
+  detectRecentActivity(project: string, withinMinutes?: number) {
+    return this.provider.detectRecentActivity(project, withinMinutes);
   }
 }

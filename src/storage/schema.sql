@@ -136,3 +136,21 @@ CREATE VIRTUAL TABLE IF NOT EXISTS session_summaries_fts USING fts5(
   request, investigated, learned, completed, next_steps, notes,
   content='session_summaries', content_rowid='id'
 );
+
+-- FTS5 triggers for session summaries (previously missing!)
+CREATE TRIGGER IF NOT EXISTS summaries_ai AFTER INSERT ON session_summaries BEGIN
+  INSERT INTO session_summaries_fts(rowid, request, investigated, learned, completed, next_steps, notes)
+  VALUES (new.id, new.request, new.investigated, new.learned, new.completed, new.next_steps, new.notes);
+END;
+
+CREATE TRIGGER IF NOT EXISTS summaries_ad AFTER DELETE ON session_summaries BEGIN
+  INSERT INTO session_summaries_fts(session_summaries_fts, rowid, request, investigated, learned, completed, next_steps, notes)
+  VALUES('delete', old.id, old.request, old.investigated, old.learned, old.completed, old.next_steps, old.notes);
+END;
+
+CREATE TRIGGER IF NOT EXISTS summaries_au AFTER UPDATE ON session_summaries BEGIN
+  INSERT INTO session_summaries_fts(session_summaries_fts, rowid, request, investigated, learned, completed, next_steps, notes)
+  VALUES('delete', old.id, old.request, old.investigated, old.learned, old.completed, old.next_steps, old.notes);
+  INSERT INTO session_summaries_fts(rowid, request, investigated, learned, completed, next_steps, notes)
+  VALUES (new.id, new.request, new.investigated, new.learned, new.completed, new.next_steps, new.notes);
+END;
