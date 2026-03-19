@@ -1,4 +1,4 @@
-import { Session, Observation, SessionSummary, Handoff, UserPrompt } from '../types/index.js';
+import { Session, Observation, SessionSummary, Handoff, UserPrompt, TokenUsageRecord, TokenSummary } from '../types/index.js';
 
 export interface IMemoryProvider {
   // Session Management
@@ -32,6 +32,12 @@ export interface IMemoryProvider {
   getPendingHandoff(project: string): Promise<Handoff | undefined>;
   markHandoffPickedUp(id: number, toSessionId: string, toCli: string): Promise<void>;
   getHandoffHistory(project: string, limit?: number): Promise<Handoff[]>;
+
+  // Token Usage
+  upsertTokenUsage(record: TokenUsageRecord): Promise<void>;
+  getTokenSummary(days?: number): Promise<TokenSummary[]>;
+  getDailyTokenUsage(days?: number): Promise<TokenUsageRecord[]>;
+  getTokenUsageByCli(cliTool: string, days?: number): Promise<TokenUsageRecord[]>;
 
   // Auto-Detection
   detectRecentActivity(project: string, withinMinutes?: number): Promise<Session | undefined>;

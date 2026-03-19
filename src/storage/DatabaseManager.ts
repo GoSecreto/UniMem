@@ -49,12 +49,12 @@ export class DatabaseManager {
       )
     `);
 
-    // Check if initial schema has been applied
-    const applied = this.db.prepare(
+    // Apply initial schema if not yet applied
+    const initialApplied = this.db.prepare(
       'SELECT name FROM _migrations WHERE name = ?'
     ).get('001-initial');
 
-    if (!applied) {
+    if (!initialApplied) {
       const schemaPath = path.join(__dirname, 'schema.sql');
       if (fs.existsSync(schemaPath)) {
         const schema = fs.readFileSync(schemaPath, 'utf8');
@@ -65,6 +65,34 @@ export class DatabaseManager {
         logger.info('Applied migration: 001-initial');
       } else {
         logger.error('Schema file not found', { path: schemaPath });
+      }
+    }
+
+    // Scan migrations directory for numbered migrations (002-*.sql, 003-*.sql, etc.)
+    this.runNumberedMigrations();
+  }
+
+  private runNumberedMigrations(): void {
+    const migrationsDir = path.join(__dirname, 'migrations');
+    if (!fs.existsSync(migrationsDir)) return;
+
+    const files = fs.readdirSync(migrationsDir)
+      .filter(f => f.endsWith('.sql') && /^\d{3}-/.test(f))
+      .sort();
+
+    for (const file of files) {
+      const name = file.replace('.sql', '');
+      const applied = this.db.prepare(
+        'SELECT name FROM _migrations WHERE name = ?'
+      ).get(name);
+
+      if (!applied) {
+        const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+        this.db.exec(sql);
+        this.db.prepare(
+          'INSERT INTO _migrations (name, applied_at) VALUES (?, ?)'
+        ).run(name, new Date().toISOString());
+        logger.info(`Applied migration: ${name}`);
       }
     }
   }

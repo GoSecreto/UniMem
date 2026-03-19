@@ -118,3 +118,41 @@ export interface ResumeContext {
   }>;
   recent_summaries: SessionSummary[];
 }
+
+export interface TokenUsageRecord {
+  id?: number;
+  cli_tool: string;
+  date: string;            // YYYY-MM-DD
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  message_count: number;
+  session_count: number;
+  tool_use_count: number;
+  cost_usd: number;
+  source: 'sync' | 'hook' | 'manual';
+  created_at_epoch?: number;
+  updated_at_epoch?: number;
+}
+
+export interface TokenSummary {
+  cli_tool: string;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cache_read_tokens: number;
+  total_cost_usd: number;
+  total_messages: number;
+  total_sessions: number;
+  days_active: number;
+}
+
+export interface ActiveSessionInfo {
+  cli_tool: string;
+  session_id: string;
+  project: string;
+  pid: number;
+  started_at_epoch: number;
+  cwd?: string;
+}

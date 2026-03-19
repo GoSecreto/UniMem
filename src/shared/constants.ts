@@ -1,6 +1,7 @@
 export const HTTP_PORT = 37888;
 export const SERVER_NAME = 'unimem';
-export const SERVER_VERSION = '1.0.0';
+export const SERVER_VERSION = '2.0.1';
+export const TOKEN_SYNC_INTERVAL_MS = 60_000; // 60 seconds
 
 export const CLI_TOOLS = ['claude-code', 'gemini', 'codex', 'copilot', 'cursor', 'aider'] as const;
 export type CliTool = typeof CLI_TOOLS[number];

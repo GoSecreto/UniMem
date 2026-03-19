@@ -70,9 +70,8 @@ export async function buildResumeContext(
     // Mark handoff as picked up if we know the current CLI
     if (currentCli && pendingHandoff.id) {
       const newSessionId = generateSessionId(currentCli as any);
-      await memoryService.markHandoffPickedUp(pendingHandoff.id, newSessionId, currentCli);
 
-      // Create a new linked session
+      // Create the session FIRST (FK constraint: handoff.to_session_id references sessions)
       await memoryService.createSession({
         session_id: newSessionId,
         project,
@@ -83,6 +82,9 @@ export async function buildResumeContext(
         created_at: new Date().toISOString(),
         created_at_epoch: Math.floor(Date.now() / 1000),
       });
+
+      // Now safe to reference the session
+      await memoryService.markHandoffPickedUp(pendingHandoff.id, newSessionId, currentCli);
     }
   } else {
     // No explicit handoff - check for recent activity (auto-detect)

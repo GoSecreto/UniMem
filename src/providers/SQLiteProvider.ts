@@ -1,7 +1,8 @@
 import { IMemoryProvider } from '../interfaces/IMemoryProvider.js';
-import { Session, Observation, SessionSummary, Handoff, UserPrompt } from '../types/index.js';
+import { Session, Observation, SessionSummary, Handoff, UserPrompt, TokenUsageRecord, TokenSummary } from '../types/index.js';
 import { DatabaseManager } from '../storage/DatabaseManager.js';
 import { sanitizeFtsQuery } from '../utils/fts-sanitize.js';
+import { withRetry } from '../utils/db-retry.js';
 import { logger } from '../shared/logger.js';
 
 export class SQLiteProvider implements IMemoryProvider {
@@ -26,19 +27,20 @@ export class SQLiteProvider implements IMemoryProvider {
   // ── Session Management ──
 
   async createSession(session: Session): Promise<void> {
-    const stmt = this.db.prepare(`
-      INSERT OR IGNORE INTO sessions (
-        session_id, project, cli_tool, cli_version, status,
-        pause_reason, parent_session_id, user_prompt,
-        created_at, created_at_epoch
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(
-      session.session_id, session.project, session.cli_tool,
-      session.cli_version || null, session.status,
-      session.pause_reason || null, session.parent_session_id || null,
-      session.user_prompt || null, session.created_at, session.created_at_epoch
-    );
+    await withRetry(() => {
+      this.db.prepare(`
+        INSERT OR IGNORE INTO sessions (
+          session_id, project, cli_tool, cli_version, status,
+          pause_reason, parent_session_id, user_prompt,
+          created_at, created_at_epoch
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        session.session_id, session.project, session.cli_tool,
+        session.cli_version || null, session.status,
+        session.pause_reason || null, session.parent_session_id || null,
+        session.user_prompt || null, session.created_at, session.created_at_epoch
+      );
+    });
   }
 
   async getSession(sessionId: string): Promise<Session | undefined> {
@@ -84,24 +86,26 @@ export class SQLiteProvider implements IMemoryProvider {
   // ── Observation Management ──
 
   async saveObservation(obs: Observation): Promise<number> {
-    const result = this.db.prepare(`
-      INSERT INTO observations (
-        session_id, project, cli_tool, type, title, subtitle,
-        facts, narrative, concepts, files_read, files_modified,
-        prompt_number, discovery_tokens, created_at, created_at_epoch
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      obs.session_id, obs.project, obs.cli_tool, obs.type,
-      obs.title || null, obs.subtitle || null,
-      JSON.stringify(obs.facts || []),
-      obs.narrative || null,
-      JSON.stringify(obs.concepts || []),
-      JSON.stringify(obs.files_read || []),
-      JSON.stringify(obs.files_modified || []),
-      obs.prompt_number || null, obs.discovery_tokens || 0,
-      obs.created_at, obs.created_at_epoch
-    );
-    return result.lastInsertRowid as number;
+    return withRetry(() => {
+      const result = this.db.prepare(`
+        INSERT INTO observations (
+          session_id, project, cli_tool, type, title, subtitle,
+          facts, narrative, concepts, files_read, files_modified,
+          prompt_number, discovery_tokens, created_at, created_at_epoch
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        obs.session_id, obs.project, obs.cli_tool, obs.type,
+        obs.title || null, obs.subtitle || null,
+        JSON.stringify(obs.facts || []),
+        obs.narrative || null,
+        JSON.stringify(obs.concepts || []),
+        JSON.stringify(obs.files_read || []),
+        JSON.stringify(obs.files_modified || []),
+        obs.prompt_number || null, obs.discovery_tokens || 0,
+        obs.created_at, obs.created_at_epoch
+      );
+      return result.lastInsertRowid as number;
+    });
   }
 
   async getObservationsByProject(project: string, limit: number = 50): Promise<Observation[]> {
@@ -268,17 +272,19 @@ export class SQLiteProvider implements IMemoryProvider {
       await this.updateSessionStatus(handoff.from_session_id, 'paused', handoff.reason);
     }
 
-    const result = this.db.prepare(`
-      INSERT INTO handoffs (
-        project, from_session_id, from_cli, state_snapshot,
-        reason, created_at_epoch
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      handoff.project, handoff.from_session_id, handoff.from_cli,
-      JSON.stringify(handoff.state_snapshot),
-      handoff.reason, handoff.created_at_epoch
-    );
-    return result.lastInsertRowid as number;
+    return withRetry(() => {
+      const result = this.db.prepare(`
+        INSERT INTO handoffs (
+          project, from_session_id, from_cli, state_snapshot,
+          reason, created_at_epoch
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        handoff.project, handoff.from_session_id, handoff.from_cli,
+        JSON.stringify(handoff.state_snapshot),
+        handoff.reason, handoff.created_at_epoch
+      );
+      return result.lastInsertRowid as number;
+    });
   }
 
   async getPendingHandoff(project: string): Promise<Handoff | undefined> {
@@ -316,6 +322,86 @@ export class SQLiteProvider implements IMemoryProvider {
       WHERE project = ? AND created_at_epoch > ?
       ORDER BY created_at_epoch DESC LIMIT 1
     `).get(project, cutoff) as Session | undefined;
+  }
+
+  // ── Token Usage ──
+
+  async upsertTokenUsage(record: TokenUsageRecord): Promise<void> {
+    await withRetry(() => {
+      this.db.prepare(`
+        INSERT INTO token_usage (
+          cli_tool, date, model, input_tokens, output_tokens,
+          cache_read_tokens, cache_write_tokens, message_count,
+          session_count, tool_use_count, cost_usd, source, updated_at_epoch
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(cli_tool, date, model) DO UPDATE SET
+          input_tokens = excluded.input_tokens,
+          output_tokens = excluded.output_tokens,
+          cache_read_tokens = excluded.cache_read_tokens,
+          cache_write_tokens = excluded.cache_write_tokens,
+          message_count = excluded.message_count,
+          session_count = excluded.session_count,
+          tool_use_count = excluded.tool_use_count,
+          cost_usd = excluded.cost_usd,
+          source = excluded.source,
+          updated_at_epoch = excluded.updated_at_epoch
+      `).run(
+        record.cli_tool, record.date, record.model,
+        record.input_tokens, record.output_tokens,
+        record.cache_read_tokens, record.cache_write_tokens,
+        record.message_count, record.session_count,
+        record.tool_use_count, record.cost_usd,
+        record.source, Math.floor(Date.now() / 1000)
+      );
+    });
+  }
+
+  async getTokenSummary(days: number = 30): Promise<TokenSummary[]> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+
+    const rows = this.db.prepare(`
+      SELECT
+        cli_tool,
+        SUM(input_tokens) as total_input_tokens,
+        SUM(output_tokens) as total_output_tokens,
+        SUM(cache_read_tokens) as total_cache_read_tokens,
+        SUM(cost_usd) as total_cost_usd,
+        SUM(message_count) as total_messages,
+        SUM(session_count) as total_sessions,
+        COUNT(DISTINCT date) as days_active
+      FROM token_usage
+      WHERE date >= ?
+      GROUP BY cli_tool
+      ORDER BY total_cost_usd DESC
+    `).all(cutoffStr) as TokenSummary[];
+
+    return rows;
+  }
+
+  async getDailyTokenUsage(days: number = 30): Promise<TokenUsageRecord[]> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+
+    return this.db.prepare(`
+      SELECT * FROM token_usage
+      WHERE date >= ?
+      ORDER BY date DESC, cli_tool ASC
+    `).all(cutoffStr) as TokenUsageRecord[];
+  }
+
+  async getTokenUsageByCli(cliTool: string, days: number = 30): Promise<TokenUsageRecord[]> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+
+    return this.db.prepare(`
+      SELECT * FROM token_usage
+      WHERE cli_tool = ? AND date >= ?
+      ORDER BY date DESC, model ASC
+    `).all(cliTool, cutoffStr) as TokenUsageRecord[];
   }
 
   // ── Helpers ──

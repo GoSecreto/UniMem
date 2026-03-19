@@ -7,6 +7,8 @@ import { deriveProjectName } from '../utils/project-name.js';
 import { buildResumeContext } from '../context/resume-builder.js';
 import { generateContextMarkdown } from '../context/generator.js';
 import { writeContextToAllClis } from '../context/file-writer.js';
+import { printWelcome, printPostInstall } from '../utils/welcome.js';
+import { warnIfWorkerDown } from '../utils/health-check.js';
 import { SERVER_VERSION, HTTP_PORT } from '../shared/constants.js';
 
 const program = new Command();
@@ -16,6 +18,22 @@ program
   .name('unimem')
   .description('Universal AI CLI Memory Service')
   .version(SERVER_VERSION);
+
+// Default command (no args) = stdio MCP server — npx compatible
+program
+  .action(async () => {
+    // If no subcommand, run stdio MCP server
+    const { startMcpServer } = await import('../index.js');
+    await startMcpServer();
+  });
+
+// Explicit alias for stdio MCP server
+program.command('serve')
+  .description('Run the stdio MCP server (same as no-args, npx compatible)')
+  .action(async () => {
+    const { startMcpServer } = await import('../index.js');
+    await startMcpServer();
+  });
 
 program.command('start')
   .description('Start the UniMem HTTP Worker (dashboard + hook receiver)')
@@ -32,6 +50,7 @@ program.command('status')
   .description('Show memory status for a project')
   .option('-p, --project <name>', 'Project name (auto-detected from cwd)')
   .action(async (options) => {
+    await warnIfWorkerDown();
     const memoryService = MemoryService.getInstance();
     const project = options.project || deriveProjectName(process.cwd());
 
@@ -115,11 +134,20 @@ program.command('install')
   .option('--claude', 'Install into Claude Code')
   .option('--all', 'Install into all supported CLIs')
   .action((options) => {
-    if (options.all || options.gemini) installService.installGemini();
-    if (options.all || options.claude) installService.installClaude();
-    if (!options.all && !options.gemini && !options.claude) {
+    const installed: string[] = [];
+    if (options.all || options.gemini) { installService.installGemini(); installed.push('Gemini CLI'); }
+    if (options.all || options.claude) { installService.installClaude(); installed.push('Claude Code'); }
+    if (installed.length > 0) {
+      printPostInstall(installed);
+    } else {
       console.log('Specify --gemini, --claude, or --all');
     }
+  });
+
+program.command('guide')
+  .description('Show the getting started guide')
+  .action(() => {
+    printWelcome();
   });
 
 program.command('resume')

@@ -29,6 +29,7 @@
 import { MemoryService } from '../services/MemoryService.js';
 import { deriveProjectName } from '../utils/project-name.js';
 import { generateSessionId } from '../utils/cli-detector.js';
+import { readActiveSession } from '../utils/active-session.js';
 import type { CliTool } from '../shared/constants.js';
 
 /**
@@ -147,6 +148,18 @@ export async function autoDetectAndInjectContext(
   currentCli: CliTool,
   withinMinutes: number = 30
 ): Promise<string | null> {
+  // Check if another CLI is currently active (concurrent session)
+  const activeSession = readActiveSession();
+  if (activeSession && activeSession.cli_tool !== currentCli && activeSession.project === project) {
+    // Another CLI is STILL RUNNING — warn about concurrent use
+    const lines: string[] = [];
+    lines.push(`## UniMem: Warning — ${activeSession.cli_tool} is also active`);
+    lines.push(`Both ${currentCli} and ${activeSession.cli_tool} are running on project "${project}".`);
+    lines.push('Context files may be overwritten. Consider closing one CLI first.');
+    lines.push('');
+    // Continue with normal detection below (don't return early)
+  }
+
   const recentSession = await memoryService.detectRecentActivity(project, withinMinutes);
 
   if (!recentSession || recentSession.cli_tool === currentCli) {

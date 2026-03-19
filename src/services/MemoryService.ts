@@ -1,6 +1,6 @@
 import { IMemoryProvider } from '../interfaces/IMemoryProvider.js';
 import { SQLiteProvider } from '../providers/SQLiteProvider.js';
-import { Session, Observation, SessionSummary, Handoff, UserPrompt } from '../types/index.js';
+import { Session, Observation, SessionSummary, Handoff, UserPrompt, TokenUsageRecord, TokenSummary } from '../types/index.js';
 
 export class MemoryService {
   private static instance: MemoryService;
@@ -56,6 +56,12 @@ export class MemoryService {
     return this.provider.markHandoffPickedUp(id, toSessionId, toCli);
   }
   getHandoffHistory(project: string, limit?: number) { return this.provider.getHandoffHistory(project, limit); }
+
+  // Token Usage
+  upsertTokenUsage(record: TokenUsageRecord) { return this.provider.upsertTokenUsage(record); }
+  getTokenSummary(days?: number) { return this.provider.getTokenSummary(days); }
+  getDailyTokenUsage(days?: number) { return this.provider.getDailyTokenUsage(days); }
+  getTokenUsageByCli(cliTool: string, days?: number) { return this.provider.getTokenUsageByCli(cliTool, days); }
 
   // Auto-Detection
   detectRecentActivity(project: string, withinMinutes?: number) {

@@ -1,20 +1,32 @@
 {
   "name": "unimem",
-  "version": "1.0.0",
-  "description": "Universal AI CLI Memory Service - persistent memory across Claude Code, Gemini CLI, Codex, Copilot, Cursor, and Aider",
+  "version": "2.0.1",
+  "description": "Universal AI CLI Memory Service - automatic context switching across Claude Code, Gemini CLI, Codex, Copilot, Cursor, and Aider",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
     "unimem": "./dist/cli/index.js"
   },
+  "files": [
+    "dist/",
+    "dist/ui/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run copy-assets && npm run add-shebang",
+    "build:all": "npm run build && cd ui && npm run build && cd .. && npm run copy-ui",
+    "copy-assets": "cp src/storage/schema.sql dist/storage/schema.sql && mkdir -p dist/storage/migrations && cp src/storage/migrations/*.sql dist/storage/migrations/",
+    "copy-ui": "mkdir -p dist/ui && cp -r ui/dist dist/ui/",
+    "prepublishOnly": "npm run build:all",
+    "add-shebang": "node -e \"const fs=require('fs');const f='dist/cli/index.js';const c=fs.readFileSync(f,'utf8');if(!c.startsWith('#!')){fs.writeFileSync(f,'#!/usr/bin/env node\\n'+c);}\"",
     "start": "node dist/index.js",
     "start:dev": "tsx src/index.ts",
     "cli": "tsx src/cli/index.ts",
-    "worker": "tsx src/server/http-server.ts",
+    "worker": "tsx src/services/WorkerService.ts",
     "test": "tsx --test src/**/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "node dist/cli/postinstall.js 2>/dev/null || true"
   },
   "keywords": [
     "mcp",
@@ -24,10 +36,23 @@
     "claude",
     "gemini",
     "codex",
-    "copilot"
+    "copilot",
+    "context-switching",
+    "handoff"
   ],
   "author": "Akanksha Gupta",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GoSecreto/UniMem.git"
+  },
+  "homepage": "https://github.com/GoSecreto/UniMem#readme",
+  "bugs": {
+    "url": "https://github.com/GoSecreto/UniMem/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/cors": "^2.8.19",

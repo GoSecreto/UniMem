@@ -1,8 +1,14 @@
 @import "tailwindcss";
 
 body {
-  @apply bg-[#0a0a0b] text-gray-300;
+  @apply bg-[#0f0f10] text-gray-300;
   margin: 0;
   min-width: 320px;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
   min-height: 100vh;
 }

@@ -1,14 +1,17 @@
 import express from 'express';
 import cors from 'cors';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { MemoryService } from './MemoryService.js';
 import { logger } from '../shared/logger.js';
 import { HTTP_PORT } from '../shared/constants.js';
 import { autoCreateHandoffOnExit, autoDetectAndInjectContext } from '../hooks/auto-save.js';
-import { writeContextFile } from '../context/file-writer.js';
+import { writeContextFile, writeContextToAllClis } from '../context/file-writer.js';
 import { generateContextMarkdown } from '../context/generator.js';
 import { buildResumeContext } from '../context/resume-builder.js';
+import { TokenSyncService } from '../tracking/token-sync.js';
+import { bufferObservation, setFlushCallback, flushSessionBuffer } from '../utils/observation-compressor.js';
 import type { CliTool } from '../shared/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -17,12 +20,21 @@ export class WorkerService {
   private app = express();
   private port: number;
   private memoryService = MemoryService.getInstance();
+  private tokenSync: TokenSyncService;
 
   constructor(port: number = HTTP_PORT) {
     this.port = port;
+    this.tokenSync = new TokenSyncService(this.memoryService);
     this.app.use(cors());
     this.app.use(express.json());
+
+    // Wire up the observation compressor flush callback
+    setFlushCallback(async (obs) => {
+      await this.memoryService.saveObservation(obs);
+    });
+
     this.setupRoutes();
+    this.setupTokenRoutes();
     this.setupStaticUI();
   }
 
@@ -168,27 +180,45 @@ export class WorkerService {
             created_at_epoch: Math.floor(Date.now() / 1000),
           });
         } else if (hookType === 'tool-use') {
-          await this.memoryService.saveObservation({
+          // Buffer tool-use observations for compression
+          const buffered = bufferObservation({
             session_id: payload.session_id,
             project: payload.project,
             cli_tool: payload.cli_tool,
-            type: categorizeToolUse(payload.tool_name),
-            title: `${payload.tool_name}`,
-            narrative: payload.summary || `Used ${payload.tool_name}`,
-            facts: [],
-            concepts: [payload.tool_name],
+            tool_name: payload.tool_name,
+            summary: payload.summary || `Used ${payload.tool_name}`,
             files_read: payload.files_read || [],
             files_modified: payload.files_modified || [],
-            created_at: new Date().toISOString(),
-            created_at_epoch: Math.floor(Date.now() / 1000),
+            timestamp: Date.now(),
           });
+
+          // If not buffered (e.g., UserPrompt), save immediately
+          if (!buffered) {
+            await this.memoryService.saveObservation({
+              session_id: payload.session_id,
+              project: payload.project,
+              cli_tool: payload.cli_tool,
+              type: categorizeToolUse(payload.tool_name),
+              title: `${payload.tool_name}`,
+              narrative: payload.summary || `Used ${payload.tool_name}`,
+              facts: [],
+              concepts: [payload.tool_name],
+              files_read: payload.files_read || [],
+              files_modified: payload.files_modified || [],
+              created_at: new Date().toISOString(),
+              created_at_epoch: Math.floor(Date.now() / 1000),
+            });
+          }
         } else if (hookType === 'session-end') {
+          // Flush any buffered observations before completing
+          flushSessionBuffer(payload.session_id);
           await this.memoryService.updateSessionStatus(
             payload.session_id, 'completed', 'session_end'
           );
         } else if (hookType === 'session-end-autosave') {
-          // AUTO-SAVE: When any session ends (for any reason), create a handoff snapshot
-          // so the next CLI can pick up seamlessly - even if user never explicitly called handoff
+          // Flush any buffered observations before creating handoff
+          flushSessionBuffer(payload.session_id);
+          // AUTO-SAVE: Create handoff snapshot + write context to all CLIs
           await autoCreateHandoffOnExit(
             this.memoryService,
             payload.session_id,
@@ -196,20 +226,40 @@ export class WorkerService {
             payload.cli_tool as CliTool,
             payload.exit_reason
           );
+
+          // Write context to ALL CLI files so the next CLI has it immediately
+          if (payload.cwd) {
+            try {
+              const resumeCtx = await buildResumeContext(this.memoryService, payload.project, payload.cli_tool);
+              const markdown = generateContextMarkdown(resumeCtx);
+              writeContextToAllClis(payload.cwd, markdown);
+              logger.info(`Context written to all CLI files for ${payload.project}`);
+            } catch (err) {
+              logger.warn('Failed to write context on session end', { error: String(err) });
+            }
+          }
+
           logger.info(`Auto-saved handoff for ${payload.cli_tool} session ${payload.session_id}`);
         } else if (hookType === 'auto-detect') {
-          // AUTO-DETECT: When a new session starts, check if there's context from other CLIs
+          // AUTO-DETECT: Check for context from other CLIs and return it
           const context = await autoDetectAndInjectContext(
             this.memoryService,
             payload.project,
             payload.cli_tool as CliTool
           );
-          if (context && payload.cwd) {
-            // Build full resume context and write to CLI-specific file
-            const resumeCtx = await buildResumeContext(this.memoryService, payload.project, payload.cli_tool);
-            const markdown = generateContextMarkdown(resumeCtx);
-            writeContextFile(payload.cwd, payload.cli_tool as CliTool, markdown);
+          if (context) {
+            // Also write to CLI-specific file if we have cwd
+            if (payload.cwd) {
+              try {
+                const resumeCtx = await buildResumeContext(this.memoryService, payload.project, payload.cli_tool);
+                const markdown = generateContextMarkdown(resumeCtx);
+                writeContextFile(payload.cwd, payload.cli_tool as CliTool, markdown);
+              } catch (err) {
+                logger.warn('Failed to write context file during auto-detect', { error: String(err) });
+              }
+            }
             logger.info(`Auto-injected context from previous CLI into ${payload.cli_tool}`);
+            return res.json({ success: true, context });
           }
         }
 
@@ -221,8 +271,55 @@ export class WorkerService {
     });
   }
 
+  private setupTokenRoutes() {
+    // ── Token Usage endpoints ──
+    this.app.get('/api/tokens/summary', async (req, res) => {
+      try {
+        const days = parseInt(req.query.days as string) || 30;
+        const summary = await this.memoryService.getTokenSummary(days);
+        res.json(summary);
+      } catch (error) {
+        res.status(500).json({ error: String(error) });
+      }
+    });
+
+    this.app.get('/api/tokens/daily', async (req, res) => {
+      try {
+        const days = parseInt(req.query.days as string) || 30;
+        const usage = await this.memoryService.getDailyTokenUsage(days);
+        res.json(usage);
+      } catch (error) {
+        res.status(500).json({ error: String(error) });
+      }
+    });
+
+    this.app.get('/api/tokens/by-cli', async (req, res) => {
+      try {
+        const cli = req.query.cli as string;
+        const days = parseInt(req.query.days as string) || 30;
+        if (!cli) return res.status(400).json({ error: 'cli query parameter required' });
+        const usage = await this.memoryService.getTokenUsageByCli(cli, days);
+        res.json(usage);
+      } catch (error) {
+        res.status(500).json({ error: String(error) });
+      }
+    });
+
+    this.app.post('/api/tokens/sync', async (_req, res) => {
+      try {
+        const count = await this.tokenSync.syncAll();
+        res.json({ success: true, records_synced: count });
+      } catch (error) {
+        res.status(500).json({ error: String(error) });
+      }
+    });
+  }
+
   private setupStaticUI() {
-    const uiPath = path.join(__dirname, '../../ui/dist');
+    // Try npm-installed path first (dist/ui/dist/), then source path (ui/dist/)
+    const npmUiPath = path.join(__dirname, '../ui/dist');
+    const devUiPath = path.join(__dirname, '../../ui/dist');
+    const uiPath = fs.existsSync(npmUiPath) ? npmUiPath : devUiPath;
     this.app.use(express.static(uiPath));
 
     // SPA fallback - only for non-API routes
@@ -241,6 +338,10 @@ export class WorkerService {
       this.app.listen(this.port, () => {
         logger.info(`UniMem Worker Service running at http://localhost:${this.port}`);
         console.log(`UniMem Dashboard: http://localhost:${this.port}`);
+
+        // Start periodic token sync
+        this.tokenSync.startPeriodicSync();
+
         resolve();
       });
     });

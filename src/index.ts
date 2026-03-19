@@ -12,139 +12,143 @@ import { deriveProjectName } from './utils/project-name.js';
 
 const memoryService = MemoryService.getInstance();
 
-const server = new Server(
-  { name: SERVER_NAME, version: SERVER_VERSION },
-  { capabilities: { tools: {} } }
-);
+function createServer(): Server {
+  const server = new Server(
+    { name: SERVER_NAME, version: SERVER_VERSION },
+    { capabilities: { tools: {} } }
+  );
 
-// ── Tool Definitions ──
+  // ── Tool Definitions ──
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
-    {
-      name: 'memory_search',
-      description: 'Search across all observations and summaries from any CLI. Returns matching observations with titles, types, and IDs.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'Search query (uses full-text search)' },
-          project: { type: 'string', description: 'Project name to scope search (optional)' },
-          cli_tool: { type: 'string', description: 'Filter by source CLI tool (optional)' },
-          limit: { type: 'number', description: 'Max results (default 20)' },
-        },
-        required: ['query'],
-      },
-    },
-    {
-      name: 'memory_save',
-      description: 'Store an observation about what you discovered, fixed, or implemented. Use this to record meaningful findings, not routine tool calls.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          title: { type: 'string', description: 'Short descriptive title (e.g., "Fixed JWT expiry off-by-one bug")' },
-          text: { type: 'string', description: 'Detailed description of the observation' },
-          type: {
-            type: 'string',
-            description: 'Type of observation',
-            enum: ['discovery', 'bugfix', 'implementation', 'architecture', 'refactor', 'configuration', 'documentation', 'testing'],
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: [
+      {
+        name: 'memory_search',
+        description: 'Search across all observations and summaries from any CLI. Returns matching observations with titles, types, and IDs.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Search query (uses full-text search)' },
+            project: { type: 'string', description: 'Project name to scope search (optional)' },
+            cli_tool: { type: 'string', description: 'Filter by source CLI tool (optional)' },
+            limit: { type: 'number', description: 'Max results (default 20)' },
           },
-          project: { type: 'string', description: 'Project name (auto-detected from cwd if not provided)' },
-          files_read: { type: 'array', items: { type: 'string' }, description: 'Files that were read' },
-          files_modified: { type: 'array', items: { type: 'string' }, description: 'Files that were changed' },
-          facts: { type: 'array', items: { type: 'string' }, description: 'Key factual statements' },
-          concepts: { type: 'array', items: { type: 'string' }, description: 'Semantic tags/concepts' },
-        },
-        required: ['title', 'text'],
-      },
-    },
-    {
-      name: 'memory_resume',
-      description: 'Get comprehensive "where we left off" context for a project. Shows last session info, pending handoffs, recent observations, and next steps. Call this when starting work on a project.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          project: { type: 'string', description: 'Project name (auto-detected if not provided)' },
+          required: ['query'],
         },
       },
-    },
-    {
-      name: 'memory_status',
-      description: 'Overview of memory state for the current project. Shows session count, observation count, active CLIs, and last activity.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          project: { type: 'string', description: 'Project name (optional, shows all projects if omitted)' },
-        },
-      },
-    },
-    {
-      name: 'memory_timeline',
-      description: 'Chronological view of observations around a specific point or for a project. Useful for understanding the sequence of events.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          project: { type: 'string', description: 'Project name' },
-          anchor_id: { type: 'number', description: 'Observation ID to center the timeline on (optional)' },
-          before: { type: 'number', description: 'Number of observations before anchor (default 5)' },
-          after: { type: 'number', description: 'Number of observations after anchor (default 5)' },
-        },
-        required: ['project'],
-      },
-    },
-    {
-      name: 'memory_handoff',
-      description: 'Create a handoff snapshot before switching to another CLI. Saves your current progress so the next CLI can pick up seamlessly. Call this when you hit a rate limit or want to switch tools.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          project: { type: 'string', description: 'Project name' },
-          reason: {
-            type: 'string',
-            enum: ['rate_limit', 'token_exhausted', 'preference', 'manual'],
-            description: 'Why you are switching CLIs',
+      {
+        name: 'memory_save',
+        description: 'Store an observation about what you discovered, fixed, or implemented. Use this to record meaningful findings, not routine tool calls.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Short descriptive title (e.g., "Fixed JWT expiry off-by-one bug")' },
+            text: { type: 'string', description: 'Detailed description of the observation' },
+            type: {
+              type: 'string',
+              description: 'Type of observation',
+              enum: ['discovery', 'bugfix', 'implementation', 'architecture', 'refactor', 'configuration', 'documentation', 'testing'],
+            },
+            project: { type: 'string', description: 'Project name (auto-detected from cwd if not provided)' },
+            files_read: { type: 'array', items: { type: 'string' }, description: 'Files that were read' },
+            files_modified: { type: 'array', items: { type: 'string' }, description: 'Files that were changed' },
+            facts: { type: 'array', items: { type: 'string' }, description: 'Key factual statements' },
+            concepts: { type: 'array', items: { type: 'string' }, description: 'Semantic tags/concepts' },
           },
-          completed: { type: 'array', items: { type: 'string' }, description: 'What has been completed so far' },
-          in_progress: { type: 'array', items: { type: 'string' }, description: 'What is currently in progress' },
-          next_steps: { type: 'array', items: { type: 'string' }, description: 'Recommended next steps' },
-          decisions_made: { type: 'array', items: { type: 'string' }, description: 'Key decisions that were made and why' },
-          files_read: { type: 'array', items: { type: 'string' }, description: 'Files that were read' },
-          files_modified: { type: 'array', items: { type: 'string' }, description: 'Files that were modified' },
-          notes: { type: 'string', description: 'Additional notes for the next CLI' },
+          required: ['title', 'text'],
         },
-        required: ['project', 'reason'],
       },
-    },
-  ],
-}));
+      {
+        name: 'memory_resume',
+        description: 'Get comprehensive "where we left off" context for a project. Shows last session info, pending handoffs, recent observations, and next steps. Call this when starting work on a project.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            project: { type: 'string', description: 'Project name (auto-detected if not provided)' },
+          },
+        },
+      },
+      {
+        name: 'memory_status',
+        description: 'Overview of memory state for the current project. Shows session count, observation count, active CLIs, and last activity.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            project: { type: 'string', description: 'Project name (optional, shows all projects if omitted)' },
+          },
+        },
+      },
+      {
+        name: 'memory_timeline',
+        description: 'Chronological view of observations around a specific point or for a project. Useful for understanding the sequence of events.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            project: { type: 'string', description: 'Project name' },
+            anchor_id: { type: 'number', description: 'Observation ID to center the timeline on (optional)' },
+            before: { type: 'number', description: 'Number of observations before anchor (default 5)' },
+            after: { type: 'number', description: 'Number of observations after anchor (default 5)' },
+          },
+          required: ['project'],
+        },
+      },
+      {
+        name: 'memory_handoff',
+        description: 'Create a handoff snapshot before switching to another CLI. Saves your current progress so the next CLI can pick up seamlessly. Call this when you hit a rate limit or want to switch tools.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            project: { type: 'string', description: 'Project name' },
+            reason: {
+              type: 'string',
+              enum: ['rate_limit', 'token_exhausted', 'preference', 'manual'],
+              description: 'Why you are switching CLIs',
+            },
+            completed: { type: 'array', items: { type: 'string' }, description: 'What has been completed so far' },
+            in_progress: { type: 'array', items: { type: 'string' }, description: 'What is currently in progress' },
+            next_steps: { type: 'array', items: { type: 'string' }, description: 'Recommended next steps' },
+            decisions_made: { type: 'array', items: { type: 'string' }, description: 'Key decisions that were made and why' },
+            files_read: { type: 'array', items: { type: 'string' }, description: 'Files that were read' },
+            files_modified: { type: 'array', items: { type: 'string' }, description: 'Files that were modified' },
+            notes: { type: 'string', description: 'Additional notes for the next CLI' },
+          },
+          required: ['project', 'reason'],
+        },
+      },
+    ],
+  }));
 
-// ── Tool Handlers ──
+  // ── Tool Handlers ──
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
 
-  try {
-    switch (name) {
-      case 'memory_search':
-        return handleSearch(args as any);
-      case 'memory_save':
-        return handleSave(args as any);
-      case 'memory_resume':
-        return handleResume(args as any);
-      case 'memory_status':
-        return handleStatus(args as any);
-      case 'memory_timeline':
-        return handleTimeline(args as any);
-      case 'memory_handoff':
-        return handleHandoff(args as any);
-      default:
-        throw new Error(`Unknown tool: ${name}`);
+    try {
+      switch (name) {
+        case 'memory_search':
+          return handleSearch(args as any);
+        case 'memory_save':
+          return handleSave(args as any);
+        case 'memory_resume':
+          return handleResume(args as any);
+        case 'memory_status':
+          return handleStatus(args as any);
+        case 'memory_timeline':
+          return handleTimeline(args as any);
+        case 'memory_handoff':
+          return handleHandoff(args as any);
+        default:
+          throw new Error(`Unknown tool: ${name}`);
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error(`Tool ${name} failed`, { error: msg });
+      return { content: [{ type: 'text', text: `Error: ${msg}` }], isError: true };
     }
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    logger.error(`Tool ${name} failed`, { error: msg });
-    return { content: [{ type: 'text', text: `Error: ${msg}` }], isError: true };
-  }
-});
+  });
+
+  return server;
+}
 
 // ── Handler Implementations ──
 
@@ -370,17 +374,22 @@ async function handleHandoff(args: {
   };
 }
 
-// ── Server Start ──
-// IMPORTANT: MCP server uses stdio - do NOT start Express/HTTP here
-// The HTTP worker runs separately via `unimem start` CLI command
+// ── Exported Entry Point ──
 
-async function runServer() {
+export async function startMcpServer(): Promise<void> {
+  const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   logger.info('UniMem MCP Server running via stdio');
 }
 
-runServer().catch((error) => {
-  logger.error('MCP Server fatal error', error);
-  process.exit(1);
-});
+// Auto-start when run directly (not imported)
+const isDirectRun = process.argv[1]?.endsWith('index.js') || process.argv[1]?.endsWith('index.ts');
+const isImportedByCli = process.argv[1]?.includes('cli/index');
+
+if (isDirectRun && !isImportedByCli) {
+  startMcpServer().catch((error) => {
+    logger.error('MCP Server fatal error', error);
+    process.exit(1);
+  });
+}

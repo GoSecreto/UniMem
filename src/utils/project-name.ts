@@ -26,11 +26,29 @@ export function deriveProjectName(cwd: string): string {
     if (match) return match[1];
   } catch { /* ignore */ }
 
-  // 3. Fallback to directory basename
+  // 3. Fallback to directory basename with parent disambiguation
   const base = path.basename(cwd);
-  // Avoid generic names
-  if (['src', 'app', 'project', 'code', 'workspace'].includes(base.toLowerCase())) {
-    return path.basename(path.dirname(cwd)) + '/' + base;
+  const parent = path.basename(path.dirname(cwd));
+  // Avoid generic names — include parent to disambiguate
+  const genericNames = ['src', 'app', 'project', 'code', 'workspace', 'my-app', 'my-project'];
+  if (genericNames.includes(base.toLowerCase())) {
+    return `${parent}/${base}`;
+  }
+  // For common names, add a short hash of the absolute path to avoid collisions
+  // e.g., two different "my-app" directories won't merge
+  const absPath = path.resolve(cwd);
+  const commonNames = ['frontend', 'backend', 'api', 'web', 'server', 'client', 'service'];
+  if (commonNames.includes(base.toLowerCase())) {
+    const hash = simpleHash(absPath).toString(36).slice(0, 4);
+    return `${parent}/${base}-${hash}`;
   }
   return base;
+}
+
+function simpleHash(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
 }

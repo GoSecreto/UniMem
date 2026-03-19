@@ -5,16 +5,27 @@
  * Receives hook events from Gemini CLI via stdin (JSON).
  * Communicates with UniMem via the HTTP Worker API.
  *
- * Hook types: session-start, before-agent, after-tool
+ * Hook types: session-start, session-end, before-agent, after-tool
+ *
+ * KEY: On session-start, outputs additionalContext to stdout so Gemini CLI
+ * injects it directly into the conversation — zero manual handoff.
  */
 import http from 'http';
 import path from 'path';
 import { deriveProjectName } from '../utils/project-name.js';
+import { writeActiveSession, clearActiveSession } from '../utils/active-session.js';
+import { enqueuePayload, drainQueue } from '../utils/offline-queue.js';
 import { HTTP_PORT } from '../shared/constants.js';
 
 const hookType = process.argv[2];
+const TIMEOUT_MS = 5000;
 
-async function postToWorker(endpoint: string, data: unknown): Promise<void> {
+interface WorkerResponse {
+  success?: boolean;
+  context?: string;
+}
+
+async function postToWorker(endpoint: string, data: unknown): Promise<WorkerResponse> {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(data);
     const req = http.request({
@@ -23,11 +34,21 @@ async function postToWorker(endpoint: string, data: unknown): Promise<void> {
       path: endpoint,
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      timeout: TIMEOUT_MS,
     }, (res) => {
-      res.resume();
-      res.on('end', resolve);
+      let responseData = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { responseData += chunk; });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(responseData));
+        } catch {
+          resolve({ success: true });
+        }
+      });
     });
     req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
     req.write(body);
     req.end();
   });
@@ -57,20 +78,59 @@ async function main() {
   const project = deriveProjectName(cwd);
   const sessionId = payload.session_id || `gemini-${Date.now().toString(36)}`;
 
+  // Replay any queued offline payloads first
+  try {
+    const queued = drainQueue();
+    for (const entry of queued) {
+      try { await postToWorker(entry.endpoint, entry.data); } catch {}
+    }
+  } catch {}
+
   if (hookType === 'session-start') {
+    // Register session
     await postToWorker('/api/hooks/session-start', {
       session_id: sessionId,
       project,
       cli_tool: 'gemini',
       prompt: payload.prompt,
     });
-    // Auto-detect: check for context from other CLIs
-    await postToWorker('/api/hooks/auto-detect', {
+
+    // Write active session file
+    writeActiveSession({
+      cli_tool: 'gemini',
       session_id: sessionId,
       project,
-      cli_tool: 'gemini',
+      pid: process.ppid || process.pid,
+      started_at_epoch: Math.floor(Date.now() / 1000),
       cwd,
     });
+
+    // Auto-detect: check for context from other CLIs
+    try {
+      const response = await postToWorker('/api/hooks/auto-detect', {
+        session_id: sessionId,
+        project,
+        cli_tool: 'gemini',
+        cwd,
+      });
+
+      // THE KEY: Output additionalContext for Gemini CLI to inject
+      if (response.context) {
+        const output = {
+          hookSpecificOutput: {
+            additionalContext: response.context,
+          },
+        };
+        process.stdout.write(JSON.stringify(output));
+        return; // Don't output anything else
+      }
+    } catch {
+      // Worker unreachable — output empty and continue silently
+    }
+
+    // No context to inject
+    process.stdout.write(JSON.stringify({}));
+
   } else if (hookType === 'session-end') {
     // AUTO-SAVE: Create handoff snapshot on every session exit
     await postToWorker('/api/hooks/session-end-autosave', {
@@ -78,7 +138,12 @@ async function main() {
       project,
       cli_tool: 'gemini',
       exit_reason: payload.reason || 'unknown',
+      cwd,
     });
+
+    // Clear active session file
+    clearActiveSession();
+
   } else if (hookType === 'before-agent') {
     // Capture user prompt
     if (payload.prompt) {
@@ -127,8 +192,22 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error('UniMem Gemini hook error:', err.message);
-  // Don't exit with error code - hooks should fail silently to not block the CLI
+main().catch(() => {
+  // Worker unreachable — queue the session event for later replay
+  try {
+    const cwd = process.cwd();
+    const project = deriveProjectName(cwd);
+    if (hookType === 'session-end') {
+      enqueuePayload('/api/hooks/session-end-autosave', {
+        session_id: `gemini-${Date.now().toString(36)}`,
+        project,
+        cli_tool: 'gemini',
+        exit_reason: 'offline',
+        cwd,
+      });
+    }
+  } catch {}
+  // Output empty JSON so Gemini CLI doesn't choke
+  process.stdout.write(JSON.stringify({}));
   process.exit(0);
 });

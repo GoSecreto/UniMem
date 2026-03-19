@@ -10,10 +10,12 @@
 import http from 'http';
 import { ClaudeCodeAdapter } from './adapter.js';
 import { deriveProjectName } from '../../utils/project-name.js';
+import { writeActiveSession, clearActiveSession } from '../../utils/active-session.js';
 import { HTTP_PORT } from '../../shared/constants.js';
 
 const hookType = process.argv[2] || 'PostToolUse';
 const adapter = new ClaudeCodeAdapter();
+const TIMEOUT_MS = 5000;
 
 async function postToWorker(endpoint: string, data: unknown): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -24,11 +26,13 @@ async function postToWorker(endpoint: string, data: unknown): Promise<void> {
       path: endpoint,
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      timeout: TIMEOUT_MS,
     }, (res) => {
       res.resume();
       res.on('end', resolve);
     });
     req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
     req.write(body);
     req.end();
   });
@@ -62,6 +66,17 @@ async function main() {
       project,
       cli_tool: 'claude-code',
     });
+
+    // Write active session file
+    writeActiveSession({
+      cli_tool: 'claude-code',
+      session_id: normalized.sessionId,
+      project,
+      pid: process.ppid || process.pid,
+      started_at_epoch: Math.floor(Date.now() / 1000),
+      cwd: normalized.cwd,
+    });
+
   } else if (normalized.hookType === 'prompt-submit') {
     await postToWorker('/api/hooks/tool-use', {
       session_id: normalized.sessionId,
@@ -81,11 +96,16 @@ async function main() {
       files_modified: normalized.filesModified,
     });
   } else if (normalized.hookType === 'session-end') {
-    await postToWorker('/api/hooks/session-end', {
+    // AUTO-SAVE: Create handoff snapshot on session exit
+    await postToWorker('/api/hooks/session-end-autosave', {
       session_id: normalized.sessionId,
       project,
       cli_tool: 'claude-code',
+      cwd: normalized.cwd,
     });
+
+    // Clear active session file
+    clearActiveSession();
   }
 
   // Output result for Claude Code to read
@@ -93,7 +113,8 @@ async function main() {
   process.stdout.write(JSON.stringify(output));
 }
 
-main().catch(err => {
-  console.error('UniMem Claude hook error:', err.message);
-  process.exit(0); // Fail silently
+main().catch(() => {
+  // Fail silently — hooks must never block the CLI
+  process.stdout.write(JSON.stringify({ success: true }));
+  process.exit(0);
 });
